@@ -33,6 +33,12 @@ t = 1;
      xlabel('edges')
      ylabel('time')
      legend('inefficient','efficient')
+     
+  [payoff1,t1] = efficientPayoff2(A);
+  [payoff2,t2] = inefficientPayoff2(A);
+  saved_time = (t2-t1)/t2;
+  fprintf('The efficient method saved %0.3f%% \n', saved_time*100);
+  
 %%
 function [payoff, A2] = structHolePayoff(A,alpha0,cost)
 % A = adjacency matix
@@ -347,4 +353,137 @@ if payoff(u0) < 0 || payoff(v0) < 0
 %          end
 end
 
+end
+
+function [payoff,time_efficient] = efficientPayoff2(A)
+% test the payoff calculation by calculating the payoff of
+% a graph A by adding one edge at a time and updating the 
+% payoff after each addition of an edge
+N = size(A,1);
+
+% gather all the edges
+[i,j]=find(A);
+numEdges=length(i);
+fprintf('Total number of edges in the graph is %d\n', numEdges);
+maxEdges=input('Enter number of edges to test\n');
+
+
+
+Mold = sparse([],[],[],N,N);
+pold = zeros(N,1);
+
+% empty A
+A = sparse([],[],[],N,N);
+
+%% STEP 3 
+% Add one edge at a time and update the payoff for each addition
+tic;
+for e=1:min(numEdges,maxEdges)
+    u0=i(e);
+    v0=j(e);
+    if (mod(e,1)==0)
+        fprintf('%d\t%e\t%f\n', e,sum(pold),toc);
+    end
+        
+    A(u0,v0)=1;
+ 
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%
+    % Now update A2, only updating the rows and columns that are changed
+    M = Mold;
+    % update u0 column of M
+    M(u0,:) = Mold(u0,:) + A(v0,:).*(1-A(u0,:));
+    M(u0,u0) = 0;
+    % update v0 column of M
+    M(:,v0) = Mold(:,v0) + A(:,u0).*(1-A(:,v0));
+    M(v0,v0) = 0;
+    M(u0,v0) = 0;
+    
+    
+    %%
+    % update the payoff, only updating those parts that changed
+    % Note when dividing by M(u,v), I do this:
+    % (M(u,v)~=0)/(M(u,v) + (M(u,v)==0))
+    % This is just a quick way to avoid a division by zero when M(u,v)==0
+    payoff = pold;
+
+    hnew = (1 - A(u0,:)).*(M(u0,:)~=0)./(M(u0,:) + (M(u0,:)==0));
+    hold = (1 - A(u0,:)).*(Mold(u0,:)~=0)./(Mold(u0,:) + (Mold(u0,:)==0));
+    payoff = payoff + A(u0,:)'.*A*(hnew-hold)';
+  
+    hnew = (1 - A(:,v0)).*(M(:,v0)~=0)./(M(:,v0) + (M(:,v0)==0));
+    hold = (1 - A(:,v0)).*(Mold(:,v0)~=0)./(Mold(:,v0) + (Mold(:,v0)==0));
+    payoff = payoff + A(:,v0).*A'*(hnew-hold);
+    
+    payoff = payoff - A(u0,:)'.*A(:,v0)*...
+        (Mold(u0,v0)~=0)/(Mold(u0,v0) + (Mold(u0,v0)==0));
+    
+    payoff(u0) = pold(u0);
+    payoff(u0) = payoff(u0)+ sum(A(:,u0).*(1 - A(:,v0)).*...
+        (M(:,v0)~=0)./(M(:,v0) + (M(:,v0)==0)),1);
+    
+    payoff(v0) = pold(v0);
+    payoff(v0) = payoff(v0)+ sum(A(v0,:).*(1 - A(u0,:)).*...
+        (M(u0,:)~=0)./(M(u0,:) + (M(u0,:)==0)),2);
+    
+    
+    pold = payoff;
+    Mold = M;
+end
+%% STEP 4 
+% Finally check if the payoff calculated edge-by-edge
+% equals the payoff calculated on the full graph
+A2=((A*A).*(A==0));
+A2 = A2 - sparse(1:N,1:N,diag(A2));
+% Secondly calculate the payoff
+G = (1-A).*(A2~=0)./(A2+(A2==0));
+H = A*G';
+fullpayoff = sum(A'.*H,2);
+
+fprintf('Difference between delta payoff and full payoff=%f\n', ...
+    norm(fullpayoff-payoff));
+
+time_efficient = toc;
+end
+
+function [payoff,time_inefficient] = inefficientPayoff2(A)
+% test the payoff calculation by calculating the payoff of
+% a graph A by adding one edge at a time and updating the 
+% payoff after each addition of an edge
+N = size(A,1);
+
+[i,j]=find(A);
+numEdges=length(i);
+fprintf('Total number of edges in the graph is %d\n', numEdges);
+
+Mold = sparse([],[],[],N,N);
+pold = zeros(N,1);
+
+A = sparse([],[],[],N,N);
+
+% Add one edge at a time and update the payoff for each addition
+tic;
+for e=1:1000
+    u0=i(e);
+    v0=j(e);
+    if (mod(e,1)==0)
+        fprintf('%d\t%e\t%f\n', e,sum(pold),toc);
+    end
+    if (A(u0,v0)==1)
+        fprintf('adding to existing edge\n');
+        exit;
+    end
+    A(u0,v0)=1;
+    % Firstly calculate A2
+    A2=((A*A).*(A==0));
+    A2 = A2 - sparse(1:N,1:N,diag(A2));
+    
+    % Secondly calculate the payoff
+    
+    G = (1-A).*(A2~=0)./(A2+(A2==0));
+    H = A*G';
+    payoff = sum(A'.*H,2);
+    pold = full(payoff);
+end
+time_inefficient = toc;
 end
